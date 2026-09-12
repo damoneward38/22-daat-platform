@@ -1,0 +1,55 @@
+daat-platform/
+├── apps/
+│   ├── web/                          # Next.js 14 App
+│   │   ├── app/
+│   │   │   ├── layout.tsx            # Root + Clerk + Providers
+│   │   │   ├── page.tsx              # Landing (all 3 systems shown)
+│   │   │   ├── dashboard/
+│   │   │   │   └── page.tsx          # Unified Dashboard
+│   │   │   ├── neural/
+│   │   │   │   └── page.tsx          # NESHER BCI Lab
+│   │   │   ├── ai/
+│   │   │   │   └── page.tsx          # RUACH AI Chat
+│   │   │   ├── blocks/
+│   │   │   │   └── page.tsx          # CHAYYIM Live Blocks
+│   │   │   └── pipeline/
+│   │   │       └── page.tsx          # Unified Pipeline View
+│   │   └── components/
+│   │       ├── scenes/
+│   │       │   ├── UnifiedScene.tsx  # ALL 3 scenes merged
+│   │       │   ├── BrainScene.tsx    # NESHER
+│   │       │   ├── SpaceScene.tsx    # RUACH
+│   │       │   └── LiveScene.tsx     # CHAYYIM
+│   │       ├── pipeline/
+│   │       │   ├── PipelineView.tsx  # Visual pipeline
+│   │       │   ├── NodeEditor.tsx    # Drag-drop nodes
+│   │       │   └── DataFlow.tsx      # Live data flow
+│   │       └── shared/
+│   │           ├── Navbar.tsx
+│   │           └── Sidebar.tsx
+│   │
+│   └── api/                          # FastAPI (Python)
+│       ├── main.py                   # FastAPI entry
+│       ├── routers/
+│       │   ├── neural.py             # EEG processing
+│       │   ├── ai.py                 # RUACH AI endpoints
+│       │   ├── blocks.py             # CHAYYIM WS endpoints
+│       │   └── pipeline.py           # Unified pipeline
+│       ├── core/
+│       │   ├── neural_processor.py   # From NESHER
+│       │   ├── ghost_agent.py        # From RUACH
+│       │   ├── live_block.py         # From CHAYYIM
+│       │   └── daat_pipeline.py      # UNIFIED CORE
+│       └── websocket/
+│           └── manager.py
+│
+├── packages/
+│   ├── daat-core/                    # Shared types
+│   │   ├── types.ts
+│   │   └── constants.ts
+│   └── daat-db/                      # Drizzle schema
+│       ├── schema.ts                 # ALL models unified
+│       └── migrate.ts
+│
+├── docker-compose.yml
+└── turbo.json                        # Turborepo

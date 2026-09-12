@@ -1,0 +1,427 @@
+"use client";
+
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useUser } from "@clerk/nextjs";
+import Sidebar from "@/components/shared/Sidebar";
+import Navbar from "@/components/shared/Navbar";
+import {
+  Brain, Wifi, Zap, Activity, Radio,
+  BarChart3, Database, GitBranch, Cpu,
+  ArrowRight, TrendingUp, MessageSquare,
+  RefreshCw, Shield, Eye
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { motion as m } from "framer-motion";
+import Link from "next/link";
+
+/* ── Live pipeline stage tracker ─────────────────────────── */
+const PIPELINE_STAGES = [
+  { id: "signal",  label: "EEG Signal",    icon: <Radio    size={14} />, system: "NESHER",  color: "#0ea5e9" },
+  { id: "fft",     label: "FFT Analysis",  icon: <BarChart3 size={14}/>, system: "NESHER",  color: "#06b6d4" },
+  { id: "bands",   label: "Band Extract",  icon: <Activity size={14} />, system: "NESHER",  color: "#8b5cf6" },
+  { id: "pattern", label: "Pattern AI",    icon: <Brain    size={14} />, system: "NESHER",  color: "#6366f1" },
+  { id: "block",   label: "Live Block",    icon: <Wifi     size={14} />, system: "CHAYYIM", color: "#0ea5e9" },
+  { id: "ai",      label: "RUACH AI",      icon: <Zap      size={14} />, system: "RUACH",   color: "#a855f7" },
+  { id: "memory",  label: "Memory Store",  icon: <Database size={14} />, system: "RUACH",   color: "#7c3aed" },
+  { id: "respond", label: "Response",      icon: <MessageSquare size={14}/>, system: "RUACH", color: "#06d6a0" },
+  { id: "cast",    label: "Broadcast",     icon: <RefreshCw size={14}/>, system: "CHAYYIM", color: "#22c55e" },
+];
+
+const SYSTEM_STATS = [
+  { system: "RUACH",   label: "AI Queries",   value: "1,284",  delta: "+18%", color: "#a855f7", icon: <Zap size={16} />      },
+  { system: "NESHER",  label: "EEG Channels", value: "32",     delta: "LIVE", color: "#0ea5e9", icon: <Brain size={16} />    },
+  { system: "CHAYYIM", label: "Live Blocks",  value: "24",     delta: "+4",   color: "#06d6a0", icon: <Wifi size={16} />     },
+  { system: "DAAT",    label: "Packets/sec",  value: "4,821",  delta: "+34%", color: "#f59e0b", icon: <Activity size={16} /> },
+];
+
+/* ── Live Brain State Card ────────────────────────────────── */
+function BrainStateCard() {
+  const bands = [
+    { name: "δ Delta",  value: 38, color: "#6366f1" },
+    { name: "θ Theta",  value: 52, color: "#8b5cf6" },
+    { name: "α Alpha",  value: 71, color: "#0ea5e9" },
+    { name: "β Beta",   value: 84, color: "#10b981" },
+    { name: "γ Gamma",  value: 29, color: "#f59e0b" },
+  ];
+
+  return (
+    <div className="glass rounded-2xl p-5 border border-chayyim-stream/20
+                    hover:border-chayyim-stream/40 transition-all duration-300">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Brain size={18} className="text-chayyim-stream" />
+          <span className="font-display font-bold text-white text-sm">Neural State</span>
+          <Badge className="text-[9px] bg-green-500/20 text-green-400 border-green-500/30">
+            LIVE
+          </Badge>
+        </div>
+        <span className="text-xs font-mono text-chayyim-signal/40">NESHER BCI</span>
+      </div>
+
+      {/* Brain state label */}
+      <div className="text-center mb-4">
+        <div className="text-2xl font-bold font-display text-white mb-1">
+          Peak Focus
+        </div>
+        <div className="text-xs font-mono text-chayyim-stream/60">
+          β-dominant · 84µV
+        </div>
+      </div>
+
+      {/* Band bars */}
+      <div className="space-y-2">
+        {bands.map((band, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-[10px] font-mono w-14" style={{ color: band.color }}>
+              {band.name}
+            </span>
+            <div className="flex-1 h-1.5 bg-chayyim-core rounded-full overflow-hidden">
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: band.color }}
+                initial={{ width: 0 }}
+                animate={{ width: `${band.value}%` }}
+                transition={{ duration: 1, delay: i * 0.1, ease: "easeOut" }}
+              />
+            </div>
+            <span className="text-[10px] font-mono text-chayyim-signal/40 w-8 text-right">
+              {band.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Pipeline Flow Visual ─────────────────────────────────── */
+function PipelineFlow({ activeStage }: { activeStage: number }) {
+  return (
+    <div className="glass rounded-2xl p-5 border border-chayyim-stream/15">
+      <div className="flex items-center justify-between mb-4">
+        <span className="font-display font-bold text-white text-sm flex items-center gap-2">
+          <GitBranch size={16} className="text-chayyim-stream" />
+          DAAT Pipeline
+        </span>
+        <Badge className="text-[9px] bg-chayyim-stream/20 text-chayyim-stream
+                          border-chayyim-stream/30 animate-pulse">
+          RUNNING
+        </Badge>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {PIPELINE_STAGES.map((stage, i) => (
+          <motion.div
+            key={stage.id}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                        text-xs font-mono transition-all duration-300
+                        ${i === activeStage
+                          ? "border"
+                          : i < activeStage
+                            ? "opacity-60"
+                            : "opacity-25"}`}
+            style={
+              i === activeStage
+                ? {
+                    background:  `${stage.color}20`,
+                    borderColor: `${stage.color}50`,
+                    color:        stage.color,
+                    boxShadow:   `0 0 15px ${stage.color}30`,
+                  }
+                : i < activeStage
+                  ? { color: `${stage.color}80` }
+                  : { color: "#64748b" }
+            }
+            animate={i === activeStage ? { scale: [1, 1.05, 1] } : {}}
+            transition={{ duration: 0.8, repeat: Infinity }}
+          >
+            {stage.icon}
+            <span>{stage.label}</span>
+
+            {/* System badge */}
+            {i === activeStage && (
+              <span
+                className="text-[8px] px-1 py-0.5 rounded"
+                style={{ background: `${stage.color}25` }}
+              >
+                {stage.system}
+              </span>
+            )}
+
+            {/* Connector arrow */}
+            {i < PIPELINE_STAGES.length - 1 && (
+              <ArrowRight
+                size={10}
+                className="ml-0.5"
+                style={{ color: i < activeStage ? stage.color : "#374151" }}
+              />
+            )}
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Dashboard Page ──────────────────────────────────── */
+export default function DashboardPage() {
+  const { user }          = useUser();
+  const [activeStage,     setActiveStage]     = useState(4);
+  const [activePipeline,  setActivePipeline]  = useState(true);
+
+  // Simulate pipeline running
+  useState(() => {
+    if (typeof window === "undefined") return;
+    const iv = setInterval(
+      () => setActiveStage((p) => (p + 1) % PIPELINE_STAGES.length),
+      800,
+    );
+    return () => clearInterval(iv);
+  });
+
+  return (
+    <div className="flex h-screen bg-chayyim-void overflow-hidden">
+
+      {/* Background */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-live-gradient" />
+        <div className="absolute inset-0 circuit-pattern opacity-30" />
+        <div className="absolute top-0 right-1/4 w-[400px] h-[400px] rounded-full
+                        bg-chayyim-stream/4 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/4 w-[350px] h-[350px] rounded-full
+                        bg-chayyim-pulse/3 blur-[100px]" />
+      </div>
+
+      <Sidebar />
+
+      <div className="flex-1 flex flex-col min-w-0 md:ml-[280px]">
+        <Navbar />
+
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pt-20">
+
+          {/* Header */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 mb-1">
+              <span className="font-hebrew text-3xl text-chayyim-stream/60">דַּעַת</span>
+              <div>
+                <h1 className="text-2xl font-bold font-display text-white">
+                  DAAT Command Center
+                </h1>
+                <p className="text-chayyim-signal/40 text-sm">
+                  RUACH · NESHER · CHAYYIM — unified
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* System stats row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {SYSTEM_STATS.map((stat, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+                className="glass rounded-2xl p-4 border border-transparent
+                           hover:border-chayyim-stream/25 transition-all duration-300"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: `${stat.color}20`, color: stat.color }}
+                  >
+                    {stat.icon}
+                  </div>
+                  <Badge
+                    className="text-[9px] px-1.5"
+                    style={{
+                      background:  `${stat.color}15`,
+                      color:        stat.color,
+                      borderColor: `${stat.color}30`,
+                    }}
+                  >
+                    {stat.system}
+                  </Badge>
+                </div>
+                <div
+                  className="text-2xl font-bold font-mono"
+                  style={{ color: stat.color }}
+                >
+                  {stat.value}
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-xs text-chayyim-signal/40">{stat.label}</span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: `${stat.color}80` }}
+                  >
+                    {stat.delta}
+                  </span>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Main grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+
+            {/* Brain state — NESHER */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              <BrainStateCard />
+            </motion.div>
+
+            {/* Pipeline flow — DAAT */}
+            <motion.div
+              className="lg:col-span-2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              <PipelineFlow activeStage={activeStage} />
+            </motion.div>
+          </div>
+
+          {/* Bottom grid — Live blocks + AI + Connections */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+            {/* CHAYYIM Live blocks */}
+            <div className="glass rounded-2xl p-5 border border-chayyim-stream/15">
+              <div className="flex items-center gap-2 mb-4">
+                <Wifi size={16} className="text-chayyim-stream" />
+                <span className="font-bold text-white text-sm">Live Blocks</span>
+                <Badge className="text-[9px] bg-chayyim-stream/15 text-chayyim-stream
+                                  border-chayyim-stream/25">CHAYYIM</Badge>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { id: "BLOCK_A", status: "live",  v: 42, ms: 0.8, color: "#22c55e" },
+                  { id: "BLOCK_B", status: "sync",  v: 17, ms: 2.1, color: "#0ea5e9" },
+                  { id: "BLOCK_C", status: "live",  v: 88, ms: 1.2, color: "#22c55e" },
+                  { id: "BLOCK_D", status: "error", v: 3,  ms: 0,   color: "#ef4444" },
+                ].map((block, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between
+                               glass rounded-xl px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="relative w-2 h-2 rounded-full"
+                        style={{ background: block.color,
+                                 boxShadow: `0 0 6px ${block.color}` }}
+                      >
+                        {block.status === "live" && (
+                          <motion.div
+                            className="absolute inset-0 rounded-full"
+                            style={{ background: block.color }}
+                            animate={{ scale: [1, 2], opacity: [0.8, 0] }}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                          />
+                        )}
+                      </div>
+                      <span className="text-xs font-mono text-chayyim-signal/60">
+                        {block.id}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-mono text-chayyim-signal/30">
+                        v{block.v}
+                      </span>
+                      <span
+                        className="text-[10px] font-mono"
+                        style={{ color: block.color }}
+                      >
+                        {block.ms > 0 ? `${block.ms}ms` : "ERR"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RUACH AI Feed */}
+            <div className="glass rounded-2xl p-5 border border-chayyim-flow/20">
+              <div className="flex items-center gap-2 mb-4">
+                <Zap size={16} className="text-chayyim-flow" />
+                <span className="font-bold text-white text-sm">AI Insights</span>
+                <Badge className="text-[9px] bg-violet-500/15 text-violet-300
+                                  border-violet-500/25">RUACH</Badge>
+              </div>
+              <div className="space-y-3">
+                {[
+                  {
+                    text: "Beta dominance detected — high cognitive focus state",
+                    band: "beta", time: "0.8s",
+                  },
+                  {
+                    text: "Alpha-theta coherence: 0.87 — optimal learning state",
+                    band: "alpha", time: "2.1s",
+                  },
+                  {
+                    text: "Gamma burst at Cz — pattern recognition active",
+                    band: "gamma", time: "4.3s",
+                  },
+                ].map((insight, i) => (
+                  <div
+                    key={i}
+                    className="text-xs text-chayyim-signal/60 leading-relaxed
+                               border-l-2 border-violet-500/30 pl-3"
+                  >
+                    <p>{insight.text}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="font-mono text-[9px] text-violet-400">
+                        {insight.band}
+                      </span>
+                      <span className="font-mono text-[9px] text-chayyim-signal/25">
+                        {insight.time} ago
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* DAAT Pipeline metrics */}
+            <div className="glass rounded-2xl p-5 border border-chayyim-sync/20">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity size={16} className="text-chayyim-sync" />
+                <span className="font-bold text-white text-sm">Pipeline Health</span>
+                <Badge className="text-[9px] bg-amber-500/15 text-amber-300
+                                  border-amber-500/25">DAAT</Badge>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Signal → Block",  ms: "0.8ms",  color: "#0ea5e9", pct: 92 },
+                  { label: "Block → AI",      ms: "12ms",   color: "#a855f7", pct: 78 },
+                  { label: "AI → Memory",     ms: "4ms",    color: "#06d6a0", pct: 95 },
+                  { label: "Memory → Cast",   ms: "0.3ms",  color: "#f59e0b", pct: 99 },
+                ].map((m, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                      <span className="text-chayyim-signal/40">{m.label}</span>
+                      <span style={{ color: m.color }}>{m.ms}</span>
+                    </div>
+                    <div className="h-1 bg-chayyim-core rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ background: m.color }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${m.pct}%` }}
+                        transition={{ duration: 1, delay: i * 0.15 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

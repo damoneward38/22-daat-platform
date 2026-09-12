@@ -1,0 +1,421 @@
+"""
+DAAT Platform — Unified Pipeline Core
+דַּעַת — Where Neural Signal Becomes Intelligent Action
+
+Pipeline Flow:
+  EEG Signal (NESHER)
+    → Signal Processing (FFT/Filter)
+    → Pattern Recognition (ML)
+    → LiveBlock Update (CHAYYIM)
+    → AI Analysis (RUACH)
+    → Memory Storage
+    → Response/Action
+    → LiveBlock Broadcast
+    → UI Update
+"""
+
+import asyncio
+import numpy as np
+from dataclasses import dataclass, field
+from typing import AsyncGenerator, Optional, Callable
+from enum import Enum
+import logging
+
+logger = logging.getLogger("DAAT")
+
+# ── Pipeline Stage Enum ────────────────────────────────────
+class PipelineStage(Enum):
+    SIGNAL_CAPTURE    = "signal_capture"
+    FFT_ANALYSIS      = "fft_analysis"
+    BAND_EXTRACTION   = "band_extraction"
+    PATTERN_DETECT    = "pattern_detect"
+    BLOCK_UPDATE      = "block_update"
+    AI_ANALYSIS       = "ai_analysis"
+    MEMORY_STORE      = "memory_store"
+    RESPONSE_GEN      = "response_gen"
+    BROADCAST         = "broadcast"
+    COMPLETE          = "complete"
+
+# ── Unified Data Packet ────────────────────────────────────
+@dataclass
+class DaatPacket:
+    """
+    The unified data packet that flows through the entire
+    DAAT pipeline — carries data from all 3 systems.
+    """
+    # Identity
+    packet_id:      str
+    session_id:     str
+    user_id:        str
+    timestamp:      float
+
+    # NESHER — Neural data
+    eeg_channels:   Optional[np.ndarray]    = None
+    sample_rate:    int                     = 256
+    band_powers:    dict                    = field(default_factory=dict)
+    brain_state:    Optional[str]           = None
+    dominant_band:  Optional[str]           = None
+    electrode_map:  dict                    = field(default_factory=dict)
+
+    # CHAYYIM — Live block data
+    block_id:       Optional[str]           = None
+    block_version:  int                     = 0
+    block_status:   str                     = "idle"
+    latency_ms:     float                   = 0.0
+    ws_connections: int                     = 0
+
+    # RUACH — AI data
+    ai_prompt:      Optional[str]           = None
+    ai_response:    Optional[str]           = None
+    model_used:     str                     = "gpt-4o"
+    memory_context: list                    = field(default_factory=list)
+    plugins_used:   list                    = field(default_factory=list)
+
+    # Pipeline state
+    current_stage:  PipelineStage           = PipelineStage.SIGNAL_CAPTURE
+    stages_complete: list                   = field(default_factory=list)
+    errors:         list                    = field(default_factory=list)
+    metadata:       dict                    = field(default_factory=dict)
+
+# ── Pipeline Stage Handler ─────────────────────────────────
+@dataclass
+class PipelineStageHandler:
+    stage:   PipelineStage
+    handler: Callable
+    enabled: bool = True
+    timeout: float = 5.0
+
+# ── DAAT Core Pipeline ─────────────────────────────────────
+class DaatPipeline:
+    """
+    The unified DAAT pipeline that orchestrates:
+      NESHER (Neural) → CHAYYIM (Live) → RUACH (AI)
+    """
+
+    def __init__(
+        self,
+        neural_processor,     # NeuralProcessor from NESHER
+        live_block_manager,   # LiveBlockManager from CHAYYIM
+        ghost_agent,          # GhostAgent from RUACH
+        ws_manager,           # WebSocket manager
+    ):
+        self.neural    = neural_processor
+        self.blocks    = live_block_manager
+        self.ai        = ghost_agent
+        self.ws        = ws_manager
+        self._handlers: list[PipelineStageHandler] = []
+        self._build_pipeline()
+
+    def _build_pipeline(self):
+        """Register all pipeline stage handlers in order."""
+        self._handlers = [
+            PipelineStageHandler(
+                stage=PipelineStage.SIGNAL_CAPTURE,
+                handler=self._stage_signal_capture,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.FFT_ANALYSIS,
+                handler=self._stage_fft_analysis,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.BAND_EXTRACTION,
+                handler=self._stage_band_extraction,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.PATTERN_DETECT,
+                handler=self._stage_pattern_detect,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.BLOCK_UPDATE,
+                handler=self._stage_block_update,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.AI_ANALYSIS,
+                handler=self._stage_ai_analysis,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.MEMORY_STORE,
+                handler=self._stage_memory_store,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.RESPONSE_GEN,
+                handler=self._stage_response_gen,
+            ),
+            PipelineStageHandler(
+                stage=PipelineStage.BROADCAST,
+                handler=self._stage_broadcast,
+            ),
+        ]
+
+    async def run(self, packet: DaatPacket) -> DaatPacket:
+        """
+        Execute the full pipeline on a DaatPacket.
+        Each stage transforms the packet and passes it forward.
+        """
+        logger.info(f"DAAT Pipeline START — packet {packet.packet_id}")
+
+        for handler in self._handlers:
+            if not handler.enabled:
+                continue
+            try:
+                packet.current_stage = handler.stage
+                packet = await asyncio.wait_for(
+                    handler.handler(packet),
+                    timeout=handler.timeout,
+                )
+                packet.stages_complete.append(handler.stage.value)
+                logger.info(f"  ✓ Stage complete: {handler.stage.value}")
+
+            except asyncio.TimeoutError:
+                err = f"Timeout at stage: {handler.stage.value}"
+                packet.errors.append(err)
+                logger.error(f"  ✗ {err}")
+
+            except Exception as e:
+                err = f"Error at {handler.stage.value}: {str(e)}"
+                packet.errors.append(err)
+                logger.error(f"  ✗ {err}")
+
+        packet.current_stage = PipelineStage.COMPLETE
+        logger.info(f"DAAT Pipeline COMPLETE — {len(packet.stages_complete)} stages")
+        return packet
+
+    async def stream(
+        self, packet: DaatPacket
+    ) -> AsyncGenerator[DaatPacket, None]:
+        """
+        Stream pipeline — yields packet after each stage
+        for real-time UI updates via CHAYYIM WebSocket.
+        """
+        for handler in self._handlers:
+            if not handler.enabled:
+                continue
+            try:
+                packet.current_stage = handler.stage
+                packet = await handler.handler(packet)
+                packet.stages_complete.append(handler.stage.value)
+                yield packet   # ← CHAYYIM picks this up live
+            except Exception as e:
+                packet.errors.append(str(e))
+                yield packet
+
+    # ── Stage 1: Signal Capture (NESHER) ──────────────────
+    async def _stage_signal_capture(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """Validate and buffer incoming EEG signal."""
+        if packet.eeg_channels is not None:
+            valid = await self.neural.validate_signal(
+                packet.eeg_channels,
+                packet.sample_rate,
+            )
+            packet.metadata["signal_valid"]   = valid
+            packet.metadata["channel_count"]  = packet.eeg_channels.shape[0]
+            packet.metadata["sample_count"]   = packet.eeg_channels.shape[1]
+        return packet
+
+    # ── Stage 2: FFT Analysis (NESHER) ────────────────────
+    async def _stage_fft_analysis(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """Run FFT decomposition across all channels."""
+        if packet.eeg_channels is not None:
+            spectrum = await self.neural.compute_fft(
+                packet.eeg_channels,
+                packet.sample_rate,
+            )
+            packet.metadata["fft_spectrum"]  = spectrum
+            packet.metadata["fft_complete"]  = True
+        return packet
+
+    # ── Stage 3: Band Extraction (NESHER) ─────────────────
+    async def _stage_band_extraction(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """Extract all 5 frequency band powers."""
+        if packet.metadata.get("fft_spectrum") is not None:
+            bands = await self.neural.extract_bands(
+                packet.metadata["fft_spectrum"],
+                packet.sample_rate,
+            )
+            packet.band_powers   = bands
+            packet.dominant_band = max(bands, key=bands.get)
+
+            # Determine brain state from dominant band
+            state_map = {
+                "delta": "deep_sleep",
+                "theta": "meditation",
+                "alpha": "relaxed",
+                "beta":  "focused",
+                "gamma": "peak_cognition",
+            }
+            packet.brain_state = state_map.get(
+                packet.dominant_band, "unknown"
+            )
+        return packet
+
+    # ── Stage 4: Pattern Detection (NESHER ML) ────────────
+    async def _stage_pattern_detect(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """Run ML pattern recognition on processed signal."""
+        if packet.band_powers:
+            patterns = await self.neural.detect_patterns(
+                packet.band_powers,
+                packet.electrode_map,
+            )
+            packet.metadata["patterns"]         = patterns
+            packet.metadata["anomalies"]        = patterns.get("anomalies", [])
+            packet.metadata["cognitive_load"]   = patterns.get("cognitive_load", 0.0)
+            packet.metadata["attention_index"]  = patterns.get("attention", 0.0)
+        return packet
+
+    # ── Stage 5: Live Block Update (CHAYYIM) ──────────────
+    async def _stage_block_update(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """
+        Push neural data into a CHAYYIM LiveBlock.
+        This is where NESHER feeds CHAYYIM in real time.
+        """
+        import time
+        t0 = time.monotonic()
+
+        block_data = {
+            "neural": {
+                "band_powers":      packet.band_powers,
+                "brain_state":      packet.brain_state,
+                "dominant_band":    packet.dominant_band,
+                "cognitive_load":   packet.metadata.get("cognitive_load"),
+                "attention_index":  packet.metadata.get("attention_index"),
+            },
+            "session_id":  packet.session_id,
+            "timestamp":   packet.timestamp,
+        }
+
+        updated_block = await self.blocks.optimistic_update(
+            block_id=packet.block_id,
+            data=block_data,
+            version=packet.block_version,
+        )
+
+        packet.block_version  = updated_block.version
+        packet.block_status   = "live"
+        packet.latency_ms     = (time.monotonic() - t0) * 1000
+        return packet
+
+    # ── Stage 6: AI Analysis (RUACH) ──────────────────────
+    async def _stage_ai_analysis(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """
+        Feed neural patterns into RUACH AI for interpretation.
+        This is where the brain talks to the AI.
+        """
+        if packet.brain_state and packet.band_powers:
+            prompt = self._build_neural_prompt(packet)
+            packet.ai_prompt = prompt
+
+            response = await self.ai.analyze(
+                prompt=prompt,
+                context={
+                    "brain_state":     packet.brain_state,
+                    "band_powers":     packet.band_powers,
+                    "cognitive_load":  packet.metadata.get("cognitive_load"),
+                    "patterns":        packet.metadata.get("patterns", {}),
+                },
+                model=packet.model_used,
+            )
+            packet.ai_response   = response.content
+            packet.plugins_used  = response.plugins_used
+        return packet
+
+    # ── Stage 7: Memory Storage (RUACH) ───────────────────
+    async def _stage_memory_store(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """
+        Store neural + AI context in RUACH persistent memory.
+        Brain states accumulate over sessions.
+        """
+        if packet.ai_response:
+            memory_entry = {
+                "type":          "neural_session",
+                "brain_state":   packet.brain_state,
+                "band_powers":   packet.band_powers,
+                "ai_analysis":   packet.ai_response,
+                "session_id":    packet.session_id,
+                "timestamp":     packet.timestamp,
+            }
+            await self.ai.memory.store(
+                user_id=packet.user_id,
+                entry=memory_entry,
+                tags=["neural", packet.brain_state, "daat"],
+            )
+            packet.memory_context.append(memory_entry)
+        return packet
+
+    # ── Stage 8: Response Generation (RUACH) ──────────────
+    async def _stage_response_gen(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """
+        Generate final structured response combining
+        neural insights + AI analysis.
+        """
+        packet.metadata["final_response"] = {
+            "brain_state":      packet.brain_state,
+            "dominant_band":    packet.dominant_band,
+            "ai_insight":       packet.ai_response,
+            "band_powers":      packet.band_powers,
+            "cognitive_load":   packet.metadata.get("cognitive_load"),
+            "attention_index":  packet.metadata.get("attention_index"),
+            "anomalies":        packet.metadata.get("anomalies", []),
+            "block_version":    packet.block_version,
+            "latency_ms":       packet.latency_ms,
+            "plugins_used":     packet.plugins_used,
+            "memory_stored":    len(packet.memory_context) > 0,
+        }
+        return packet
+
+    # ── Stage 9: Broadcast (CHAYYIM WebSocket) ────────────
+    async def _stage_broadcast(
+        self, packet: DaatPacket
+    ) -> DaatPacket:
+        """
+        Broadcast final result to all connected CHAYYIM
+        WebSocket clients. The UI updates in real time.
+        """
+        await self.ws.broadcast(
+            session_id=packet.session_id,
+            event={
+                "type":    "daat.pipeline.complete",
+                "packet":  packet.metadata["final_response"],
+                "block_id": packet.block_id,
+                "version":  packet.block_version,
+            },
+        )
+        packet.ws_connections = await self.ws.connection_count(
+            packet.session_id
+        )
+        return packet
+
+    # ── Neural Prompt Builder ──────────────────────────────
+    def _build_neural_prompt(self, packet: DaatPacket) -> str:
+        bands = packet.band_powers
+        return (
+            f"Neural signal analysis — Session {packet.session_id}:\n"
+            f"Brain State: {packet.brain_state}\n"
+            f"Dominant Band: {packet.dominant_band}\n"
+            f"Band Powers: "
+            f"δ={bands.get('delta',0):.2f} "
+            f"θ={bands.get('theta',0):.2f} "
+            f"α={bands.get('alpha',0):.2f} "
+            f"β={bands.get('beta',0):.2f} "
+            f"γ={bands.get('gamma',0):.2f}\n"
+            f"Cognitive Load: {packet.metadata.get('cognitive_load',0):.2f}\n"
+            f"Attention Index: {packet.metadata.get('attention_index',0):.2f}\n"
+            f"Anomalies: {packet.metadata.get('anomalies',[])}\n\n"
+            f"Provide a concise clinical-grade analysis of this neural state, "
+            f"identify any significant patterns, and suggest actionable insights."
+        )
